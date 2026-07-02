@@ -351,18 +351,22 @@ STALL_SECONDS=300 ./toggle-model.sh start
 
 ### Auto-loop for continuous ads
 
-The `stall-loop.sh` script launches Claude Code in a `tmux` session and repeatedly sends prompts that trigger long internal "thinking". Combined with stall mode, each prompt keeps the spinner running for ~5 minutes.
+The `stall-loop.sh` script sends prompts to a `tmux` session running Claude Code. Combined with stall mode, each prompt keeps the spinner running for ~5 minutes.
 
 ```bash
 # Prerequisites
 sudo apt-get install -y tmux
 
-# Start everything
+# Terminal 1: Start proxy + open Claude in tmux
 STALL_SECONDS=300 ./toggle-model.sh start
 ./toggle-model.sh free
-./stall-loop.sh start
+./stall-loop.sh launch          # opens Claude in tmux, press Enter to dismiss splash
 
-# Watch the ads
+# Terminal 2: Start auto-loop
+cd ~/Projects/opencode-proxy
+./stall-loop.sh start           # sends prompt now + every ~5min
+
+# Watch the ads (from either terminal)
 tmux attach -t stall-ads
 # Detach: Ctrl+B then D
 

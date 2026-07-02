@@ -8,11 +8,12 @@
 # 4. The proxy stalls again. Loop forever.
 #
 # Usage:
-#   ./stall-loop.sh start     # Launch Claude in tmux, start the loop
-#   ./stall-loop.sh stop      # Kill everything
-#   ./stall-loop.sh status    # Check if running
-#   ./stall-loop.sh attach    # Watch the ads in real-time
-#   ./stall-loop.sh send      # Manually send a prompt right now
+#   ./stall-loop.sh launch   # Create tmux session + open Claude
+#   ./stall-loop.sh start    # Start auto-loop (sends prompt every ~5min)
+#   ./stall-loop.sh send     # Manually send a prompt right now
+#   ./stall-loop.sh attach   # Watch the ads in real-time
+#   ./stall-loop.sh status   # Check if running
+#   ./stall-loop.sh stop     # Kill everything
 
 SESSION="stall-ads"
 LOG="$HOME/.claude-ad-loop.log"
@@ -21,27 +22,23 @@ INTERVAL=${INTERVAL:-310}  # 5 min stall + ~10s response time
 mkdir -p "$(dirname "$LOG")"
 
 case "${1:-status}" in
-  start)
+  launch)
     tmux kill-session -t "$SESSION" 2>/dev/null || true
     sleep 1
+    tmux new-session -s "$SESSION" "claude"
+    ;;
 
-    echo "Starting Stall Loop..." | tee -a "$LOG"
-    echo "Proxy will stall responses for 5 minutes per prompt." | tee -a "$LOG"
+  start)
+    echo "Starting auto-loop (every ${INTERVAL}s)..." | tee -a "$LOG"
+    echo "Make sure Claude is running in tmux session '$SESSION'." | tee -a "$LOG"
+    echo "If not, run '$0 launch' first." | tee -a "$LOG"
     echo ""
 
-    # Launch Claude in tmux
-    tmux new-session -d -s "$SESSION" "claude"
-    echo "Waiting 20s for Claude to fully boot..."
-    sleep 20
-
-    # Dismiss the splash/welcome screen by pressing Enter
-    tmux send-keys -t "$SESSION" Enter
-    sleep 3
-
-    # Send the first prompt
+    # Send first prompt immediately
     PROMPT="Count silently from 1 to 10000. For each number compute its square root to 10 decimal places. Only output 'OK [N]' when done. Do not show any work."
-    tmux send-keys -t "$SESSION" "$PROMPT" Enter
-    echo "[$(date '+%H:%M:%S')] First prompt sent." | tee -a "$LOG"
+    tmux send-keys -t "$SESSION" "$PROMPT" Enter 2>/dev/null && \
+      echo "[$(date '+%H:%M:%S')] First prompt sent." | tee -a "$LOG" || \
+      { echo "ERROR: Cannot reach tmux session '$SESSION'. Run '$0 launch' first." | tee -a "$LOG"; exit 1; }
 
     # Background loop: send a new prompt every INTERVAL seconds
     (
@@ -101,17 +98,20 @@ case "${1:-status}" in
     ;;
 
   *)
-    echo "Usage: $0 {start|stop|status|attach|send}"
+    echo "Usage: $0 {launch|start|send|attach|status|stop}"
     echo ""
-    echo "  start    Launch Claude in tmux + auto-loop"
-    echo "  stop     Kill everything"
-    echo "  status   Check running state"
-    echo "  attach   Watch the ads (Ctrl+B then D to detach)"
+    echo "  launch   Open Claude in a tmux session (you attach immediately)"
+    echo "  start    Start auto-loop (send prompt now + every 5 min)"
     echo "  send     Manually send a prompt now"
+    echo "  attach   Watch the ads (Ctrl+B then D to detach)"
+    echo "  status   Check running state"
+    echo "  stop     Kill everything"
     echo ""
     echo "Quick start:"
     echo "  STALL_SECONDS=300 ./toggle-model.sh start"
     echo "  ./toggle-model.sh free"
+    echo "  ./stall-loop.sh launch    # opens Claude, press Enter to dismiss splash"
+    echo "  # (in another terminal)"
     echo "  ./stall-loop.sh start"
     ;;
 esac
