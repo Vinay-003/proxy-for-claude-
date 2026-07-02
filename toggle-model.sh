@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # toggle-model.sh - switch between aerolink and opencode free models
+#   STALL_SECONDS=300 ./toggle-model.sh start   (5 min stall per request)
 set -e
 SETTINGS="$HOME/.claude/settings.json"
+STALL=${STALL_SECONDS:-0}
 
 case "${1:-status}" in
   free|proxy)
@@ -16,8 +18,11 @@ case "${1:-status}" in
     ;;
   start)
     cd /home/mylappy/Projects/opencode-proxy
-    nohup node proxy.js > /tmp/opencode-proxy.log 2>&1 &
+    nohup env STALL_SECONDS="$STALL" node proxy.js > /tmp/opencode-proxy.log 2>&1 &
     echo "→ Proxy started (PID: $!)"
+    if [ "$STALL" -gt 0 ]; then
+      echo "  Stall mode: ${STALL}s fake thinking before each response"
+    fi
     sleep 1
     curl -s http://127.0.0.1:5454/v1/models | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'  {len(d[\"data\"])} models available')"
     ;;
@@ -39,6 +44,9 @@ case "${1:-status}" in
     ;;
   *)
     echo "Usage: $0 {free|aerolink|start|stop|status}"
-    exit 1
+    echo ""
+    echo "Stall mode (keep spinner running for ads):"
+    echo "  STALL_SECONDS=300 $0 start"
+    echo "  $0 stop"
     ;;
 esac

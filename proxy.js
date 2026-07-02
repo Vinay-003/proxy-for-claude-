@@ -3,6 +3,7 @@
 const http = require('http');
 
 const PORT = parseInt(process.env.PORT || '5454');
+const STALL_SECONDS = parseInt(process.env.STALL_SECONDS || '0');
 const FREE_API = 'https://opencode.ai/zen/v1';
 
 const FREE_MODELS = [
@@ -80,7 +81,7 @@ function sendMessageStart(res, model) {
   return id;
 }
 
-function* openaiToAnthropicSSE(line, model, ctx) {
+function* openaiToAnthropicSSE(line, model, ctx, indexOffset = 0) {
   if (!line.startsWith('data: ')) return;
   const d = line.slice(6).trim();
   if (d === '[DONE]') {
@@ -98,20 +99,20 @@ function* openaiToAnthropicSSE(line, model, ctx) {
   if (delta.reasoning_content) {
     if (!ctx.thinkingStarted) {
       ctx.thinkingStarted = true;
-      yield `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } })}\n\n`;
+      yield `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0 + indexOffset, content_block: { type: 'thinking', thinking: '' } })}\n\n`;
     }
-    yield `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: delta.reasoning_content } })}\n\n`;
+    yield `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0 + indexOffset, delta: { type: 'thinking_delta', thinking: delta.reasoning_content } })}\n\n`;
   }
   if (delta.content) {
     if (!ctx.textStarted) {
       ctx.textStarted = true;
-      yield `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: ctx.thinkingStarted ? 1 : 0, content_block: { type: 'text', text: '' } })}\n\n`;
+      yield `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: (ctx.thinkingStarted ? 1 : 0) + indexOffset, content_block: { type: 'text', text: '' } })}\n\n`;
     }
-    yield `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: ctx.thinkingStarted ? 1 : 0, delta: { type: 'text_delta', text: delta.content } })}\n\n`;
+    yield `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: (ctx.thinkingStarted ? 1 : 0) + indexOffset, delta: { type: 'text_delta', text: delta.content } })}\n\n`;
   }
   if (finish) {
-    if (ctx.thinkingStarted) yield `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`;
-    if (ctx.textStarted || !ctx.thinkingStarted) yield `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: ctx.thinkingStarted ? 1 : 0 })}\n\n`;
+    if (ctx.thinkingStarted) yield `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 + indexOffset })}\n\n`;
+    if (ctx.textStarted || !ctx.thinkingStarted) yield `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: (ctx.thinkingStarted ? 1 : 0) + indexOffset })}\n\n`;
     const sr = finish === 'length' ? 'max_tokens' : 'end_turn';
     yield `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: sr, stop_sequence: null }, usage: { output_tokens: 1 } })}\n\n`;
     yield `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`;
@@ -161,16 +162,15 @@ const server = http.createServer(async (req, res) => {
         aBody.model = resolvedModel;
         const isStream = aBody.stream !== false;
         const oaiBody = anthropicToOpenAI(aBody);
-        const oaiResp = await openaiFetch(oaiBody);
-
-        if (!oaiResp.ok) {
-          const txt = await oaiResp.text();
-          res.writeHead(502, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: { message: `API error: ${txt}` } }));
-          return;
-        }
 
         if (!isStream) {
+          const oaiResp = await openaiFetch(oaiBody);
+          if (!oaiResp.ok) {
+            const txt = await oaiResp.text();
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: `API error: ${txt}` } }));
+            return;
+          }
           const json = await oaiResp.json();
           const text = json.choices?.[0]?.message?.content || '';
           const reasoning = json.choices?.[0]?.message?.reasoning_content || '';
@@ -187,6 +187,9 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        // Start API call in background (parallel with stall)
+        const oaiRespPromise = openaiFetch(oaiBody);
+
         // Streaming
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
@@ -194,11 +197,52 @@ const server = http.createServer(async (req, res) => {
           'Connection': 'keep-alive',
         });
         sendMessageStart(res, modelId);
+
+        const ctx = { thinkingStarted: false, textStarted: false };
+        let indexOffset = 0;
+
+        // Stall phase: send fake thinking blocks before the real response
+        if (STALL_SECONDS > 0) {
+          indexOffset = 1;
+          ctx.thinkingStarted = true;
+          res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } })}\n\n`);
+          const stallEnd = Date.now() + STALL_SECONDS * 1000;
+          const stallWords = [
+            'Processing', 'Analyzing', 'Computing', 'Reasoning', 'Thinking',
+            'Evaluating', 'Synthesizing', 'Calculating', 'Examining', 'Formulating',
+          ];
+          let wi = 0;
+          while (Date.now() < stallEnd) {
+            if (res.writableEnded) break;
+            const remaining = Math.ceil((stallEnd - Date.now()) / 1000);
+            const word = stallWords[wi % stallWords.length];
+            res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: `${word}... (${Math.floor(remaining / 60)}m ${remaining % 60}s remaining)\n` } })}\n\n`);
+            await new Promise(r => setTimeout(r, 2000));
+            wi++;
+          }
+          res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`);
+          ctx.thinkingStarted = false;
+          ctx.textStarted = false;
+        }
+
+        // Wait for API response (was running in parallel)
+        const oaiResp = await oaiRespPromise;
+        if (!oaiResp.ok) {
+          const txt = await oaiResp.text();
+          res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0 + indexOffset, content_block: { type: 'text', text: '' } })}\n\n`);
+          res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0 + indexOffset, delta: { type: 'text_delta', text: `[API Error: ${txt}]` } })}\n\n`);
+          res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 + indexOffset })}\n\n`);
+          res.write(`event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } })}\n\n`);
+          res.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
+          if (!res.writableEnded) res.end();
+          return;
+        }
+
+        // Stream the real API response
         const reader = oaiResp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
         let sawFinish = false;
-        const ctx = { thinkingStarted: false, textStarted: false };
         try {
           while (true) {
             const { done, value } = await reader.read();
@@ -207,14 +251,14 @@ const server = http.createServer(async (req, res) => {
             const lines = buf.split('\n');
             buf = lines.pop() || '';
             for (const line of lines) {
-              for (const evt of openaiToAnthropicSSE(line, modelId, ctx)) {
+              for (const evt of openaiToAnthropicSSE(line, modelId, ctx, indexOffset)) {
                 if (evt.includes('message_stop')) sawFinish = true;
                 res.write(evt);
               }
             }
           }
           if (buf.trim()) {
-            for (const evt of openaiToAnthropicSSE(buf, modelId, ctx)) {
+            for (const evt of openaiToAnthropicSSE(buf, modelId, ctx, indexOffset)) {
               if (evt.includes('message_stop')) sawFinish = true;
               res.write(evt);
             }
@@ -227,8 +271,13 @@ const server = http.createServer(async (req, res) => {
         }
         if (!res.writableEnded) res.end();
       } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: e.message } }));
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: e.message } }));
+        } else if (!res.writableEnded) {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`);
+          res.end();
+        }
       }
     });
     return;
