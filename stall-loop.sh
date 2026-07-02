@@ -36,7 +36,8 @@ case "${1:-status}" in
 
     # Send first prompt immediately
     PROMPT="Count silently from 1 to 10000. For each number compute its square root to 10 decimal places. Only output 'OK [N]' when done. Do not show any work."
-    tmux send-keys -t "$SESSION" "$PROMPT" Enter 2>/dev/null && \
+    tmux send-keys -l -t "$SESSION" "$PROMPT" && \
+      tmux send-keys -t "$SESSION" Enter && \
       echo "[$(date '+%H:%M:%S')] First prompt sent." | tee -a "$LOG" || \
       { echo "ERROR: Cannot reach tmux session '$SESSION'. Run '$0 launch' first." | tee -a "$LOG"; exit 1; }
 
@@ -45,7 +46,8 @@ case "${1:-status}" in
       while true; do
         sleep "$INTERVAL"
         PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
-        tmux send-keys -t "$SESSION" "$PROMPT" Enter 2>/dev/null || true
+        tmux send-keys -l -t "$SESSION" "$PROMPT"
+        tmux send-keys -t "$SESSION" Enter
         echo "[$(date '+%H:%M:%S')] Prompt sent via loop." | tee -a "$LOG"
       done
     ) &
@@ -66,7 +68,8 @@ case "${1:-status}" in
 
   send)
     PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
-    tmux send-keys -t "$SESSION" "$PROMPT" Enter
+    tmux send-keys -l -t "$SESSION" "$PROMPT"
+    tmux send-keys -t "$SESSION" Enter
     echo "[$(date '+%H:%M:%S')] Prompt sent manually."
     ;;
 
