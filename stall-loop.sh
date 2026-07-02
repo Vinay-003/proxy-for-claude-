@@ -12,31 +12,31 @@
 #   ./stall-loop.sh stop      # Kill everything
 #   ./stall-loop.sh status    # Check if running
 #   ./stall-loop.sh attach    # Watch the ads in real-time
+#   ./stall-loop.sh send      # Manually send a prompt right now
 
-set -euo pipefail
 SESSION="stall-ads"
 LOG="$HOME/.claude-ad-loop.log"
-INTERVAL=${INTERVAL:-310}  # 5 min stall + ~10s response time = 310s
+INTERVAL=${INTERVAL:-310}  # 5 min stall + ~10s response time
 
 mkdir -p "$(dirname "$LOG")"
 
 case "${1:-status}" in
   start)
-    # Kill any existing session
     tmux kill-session -t "$SESSION" 2>/dev/null || true
     sleep 1
 
     echo "Starting Stall Loop..." | tee -a "$LOG"
     echo "Proxy will stall responses for 5 minutes per prompt." | tee -a "$LOG"
+    echo ""
 
     # Launch Claude in tmux
     tmux new-session -d -s "$SESSION" "claude"
-    echo "Waiting for Claude to start..." | tee -a "$LOG"
-    sleep 5
+    echo "Waiting 15s for Claude to fully boot..."
+    sleep 15
 
-    # Send the first prompt immediately
-    FIRST_PROMPT="Count silently from 1 to 10000. For each number compute its square root to 10 decimal places. Only output 'OK [N]' when done. Do not show any work."
-    tmux send-keys -t "$SESSION" "$FIRST_PROMPT" Enter
+    # Send the first prompt
+    PROMPT="Count silently from 1 to 10000. For each number compute its square root to 10 decimal places. Only output 'OK [N]' when done. Do not show any work."
+    tmux send-keys -t "$SESSION" "$PROMPT" Enter
     echo "[$(date '+%H:%M:%S')] First prompt sent." | tee -a "$LOG"
 
     # Background loop: send a new prompt every INTERVAL seconds
@@ -45,18 +45,28 @@ case "${1:-status}" in
         sleep "$INTERVAL"
         PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
         tmux send-keys -t "$SESSION" "$PROMPT" Enter 2>/dev/null || true
-        echo "[$(date '+%H:%M:%S')] Prompt sent." | tee -a "$LOG"
+        echo "[$(date '+%H:%M:%S')] Prompt sent via loop." | tee -a "$LOG"
       done
     ) &
     LOOP_PID=$!
     echo "$LOOP_PID" > /tmp/stall-loop-pid
-    echo "Loop PID: $LOOP_PID" | tee -a "$LOG"
 
     echo ""
-    echo "=== Ads are running! ==="
-    echo "Attach: tmux attach -t $SESSION"
-    echo "Detach: Ctrl+B then D"
-    echo "Stop:   $0 stop"
+    echo "============================================"
+    echo "  ADS ARE RUNNING"
+    echo "============================================"
+    echo "  Watch:   tmux attach -t $SESSION"
+    echo "  Detach:  Ctrl+B then D"
+    echo "  Manual:  $0 send"
+    echo "  Status:  $0 status"
+    echo "  Stop:    $0 stop"
+    echo "============================================"
+    ;;
+
+  send)
+    PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
+    tmux send-keys -t "$SESSION" "$PROMPT" Enter
+    echo "[$(date '+%H:%M:%S')] Prompt sent manually."
     ;;
 
   stop)
@@ -70,13 +80,13 @@ case "${1:-status}" in
 
   status)
     if tmux has-session -t "$SESSION" 2>/dev/null; then
-      echo "Stall Loop: RUNNING"
-      echo "Attach: tmux attach -t $SESSION"
+      echo "Claude session: RUNNING"
+      echo "  Attach: tmux attach -t $SESSION"
     else
-      echo "Stall Loop: STOPPED"
+      echo "Claude session: STOPPED"
     fi
     if [ -f /tmp/stall-loop-pid ] && kill -0 "$(cat /tmp/stall-loop-pid)" 2>/dev/null; then
-      echo "Auto-loop: RUNNING"
+      echo "Auto-loop: RUNNING (sends prompt every ${INTERVAL}s)"
     else
       echo "Auto-loop: STOPPED"
     fi
@@ -87,17 +97,17 @@ case "${1:-status}" in
     ;;
 
   *)
-    echo "Usage: $0 {start|stop|status|attach}"
+    echo "Usage: $0 {start|stop|status|attach|send}"
     echo ""
-    echo "Prerequisites:"
-    echo "  1. Start proxy with stall: STALL_SECONDS=300 ./toggle-model.sh start"
-    echo "  2. Switch to free mode:     ./toggle-model.sh free"
-    echo "  3. Run this loop:           $0 start"
+    echo "  start    Launch Claude in tmux + auto-loop"
+    echo "  stop     Kill everything"
+    echo "  status   Check running state"
+    echo "  attach   Watch the ads (Ctrl+B then D to detach)"
+    echo "  send     Manually send a prompt now"
     echo ""
-    echo "Commands:"
-    echo "  start    Launch Claude in tmux and start the auto-loop"
-    echo "  stop     Kill the tmux session and loop"
-    echo "  status   Check if running"
-    echo "  attach   Watch the ads in real-time"
+    echo "Quick start:"
+    echo "  STALL_SECONDS=300 ./toggle-model.sh start"
+    echo "  ./toggle-model.sh free"
+    echo "  ./stall-loop.sh start"
     ;;
 esac
