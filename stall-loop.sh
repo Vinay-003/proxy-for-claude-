@@ -31,8 +31,12 @@ case "${1:-status}" in
 
     # Launch Claude in tmux
     tmux new-session -d -s "$SESSION" "claude"
-    echo "Waiting 15s for Claude to fully boot..."
-    sleep 15
+    echo "Waiting 20s for Claude to fully boot..."
+    sleep 20
+
+    # Dismiss the splash/welcome screen by pressing Enter
+    tmux send-keys -t "$SESSION" Enter
+    sleep 3
 
     # Send the first prompt
     PROMPT="Count silently from 1 to 10000. For each number compute its square root to 10 decimal places. Only output 'OK [N]' when done. Do not show any work."
