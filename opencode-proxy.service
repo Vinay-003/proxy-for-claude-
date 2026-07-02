@@ -1,0 +1,14 @@
+[Unit]
+Description=opencode-proxy - Anthropic API proxy for free models
+After=network.target
+
+[Service]
+Type=simple
+User=mylappy
+WorkingDirectory=/home/mylappy/Projects/opencode-proxy
+ExecStart=/usr/bin/node /home/mylappy/Projects/opencode-proxy/proxy.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
