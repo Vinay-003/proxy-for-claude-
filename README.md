@@ -51,6 +51,9 @@ All Claude, GPT, Gemini, and Grok model names are automatically aliased to the d
 |------|---------|
 | `proxy.js` | The proxy server (Node.js, no dependencies) |
 | `toggle-model.sh` | Start/stop the proxy and switch between free models and aerolink |
+| `stall-loop.sh` | Terminal automation: keeps Claude Code thinking for ad impressions |
+| `claude-ad-loop.sh` | Alternative: headless API loop (no Claude UI, no ads) |
+| `headless-loop.sh` | Direct API loop without Claude Code |
 | `opencode-proxy.service` | systemd user service for auto-start on boot (optional) |
 
 ---
@@ -318,3 +321,84 @@ toggle-model.sh status
 ```
 
 You must restart Claude Code after switching.
+
+---
+
+## Stall Mode — Keep Ads Running
+
+The proxy can **stall** responses by sending fake "thinking" blocks for a set duration before forwarding the real API response. Claude Code shows the spinner the whole time — which means **Kickbacks ads keep showing**.
+
+### How it works
+
+```
+Prompt sent ──► Proxy receives ──► Fake thinking blocks (N minutes) ──► Real API call ──► Response
+                                        │                                      │
+                                    Spinner shows ads                    Actual model reply
+                                    (Kickbacks earns)                    delivered to Claude
+```
+
+The API call starts in **parallel** with the stall, so the real response is ready when the stall ends.
+
+### Start the proxy with stall
+
+```bash
+# 5 minute stall per request (300 seconds)
+STALL_SECONDS=300 ./toggle-model.sh start
+
+# Point Claude Code to the proxy
+./toggle-model.sh free
+```
+
+### Auto-loop for continuous ads
+
+The `stall-loop.sh` script launches Claude Code in a `tmux` session and repeatedly sends prompts that trigger long internal "thinking". Combined with stall mode, each prompt keeps the spinner running for ~5 minutes.
+
+```bash
+# Prerequisites
+sudo apt-get install -y tmux
+
+# Start everything
+STALL_SECONDS=300 ./toggle-model.sh start
+./toggle-model.sh free
+./stall-loop.sh start
+
+# Watch the ads
+tmux attach -t stall-ads
+# Detach: Ctrl+B then D
+
+# Check status
+./stall-loop.sh status
+
+# Stop
+./stall-loop.sh stop
+./toggle-model.sh stop
+```
+
+### Timeline
+
+| Phase | Duration | What Claude Code shows |
+|-------|----------|----------------------|
+| 1. Prompt sent | instant | User message appears |
+| 2. Proxy stall | 5 minutes | Spinner with "Processing..." / "Analyzing..." |
+| 3. API response | ~5 seconds | Model reply streams in |
+| 4. Idle | ~5 seconds | Prompt ready for next message |
+| 5. Next prompt | auto | Loop repeats |
+
+### Custom prompt
+
+Edit `stall-loop.sh` and change the `PROMPT` variable. The prompt should trigger long internal reasoning with minimal output:
+
+```
+Count silently from 1 to 10000. For each number check if it is prime
+and compute its square root. Only output 'OK [N]' when done.
+```
+
+### Only real API calls consume your usage
+
+The stall phase is entirely local — zero API calls. One real API call happens at the end of the stall to get an actual response. That's **~12 API calls per hour** of continuous ads.
+
+### Works with Kickbacks
+
+- Kickbacks ads show in the Claude Code spinner during the stall
+- Kickbacks status line shows sponsor messages at the bottom
+- No proxy configuration needed — Kickbacks and the proxy are independent
