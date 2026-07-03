@@ -22,7 +22,7 @@ PROMPT_FILE="/home/mylappy/Projects/opencode-proxy/prompts.txt"
 CLAUDE_CMD="$(which claude 2>/dev/null || echo '/home/mylappy/.nvm/versions/node/v24.14.1/bin/claude')"
 
 # Config with sensible defaults (override via env)
-STALL=${STALL_SECONDS:-180}
+STALL=${STALL_SECONDS:-60}
 MIN_INTERVAL=${MIN_INTERVAL:-180}
 MAX_INTERVAL=${MAX_INTERVAL:-420}
 MAX_CYCLES=${MAX_CYCLES:-0}  # 0 = unlimited

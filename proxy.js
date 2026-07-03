@@ -142,11 +142,19 @@ function* openaiToAnthropicSSE(line, model, ctx, indexOffset = 0) {
 
 async function openaiFetch(body) {
   body.stream = body.stream !== false;
-  return fetch(`${FREE_API}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+  try {
+    const resp = await fetch(`${FREE_API}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return resp;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -256,6 +264,7 @@ const server = http.createServer(async (req, res) => {
 
         // Wait for API response (was running in parallel) with retry for terminated errors
         let oaiResp = await oaiRespPromise;
+        log(`API response: HTTP ${oaiResp.status} Content-Type: ${oaiResp.headers.get('content-type')}`);
         let attempt = 1;
         let errText = '';
         while (!oaiResp.ok && attempt <= 3) {

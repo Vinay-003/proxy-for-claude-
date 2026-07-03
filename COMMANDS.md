@@ -5,7 +5,7 @@
 ```bash
 cd /home/mylappy/Projects/opencode-proxy
 ./toggle-model.sh stop
-STALL_SECONDS=180 ./toggle-model.sh start     # proxy with ~3min stall
+STALL_SECONDS=60 ./toggle-model.sh start     # proxy with ~1min stall
 ./stall-loop.sh launch                         # open Claude in tmux
 ./stall-loop.sh start                          # start the auto-loop
 ```
@@ -33,12 +33,12 @@ Watch with `tmux attach -t stall-ads` · Detach with Ctrl+B then D.
 
 | Var | Default | Description |
 |---|---|---|
-| `STALL_SECONDS` | 180 | Base stall time for proxy thinking |
+| `STALL_SECONDS` | 60 | Base stall time for proxy thinking |
 | `MIN_INTERVAL` | 180 | Min seconds between prompts |
 | `MAX_INTERVAL` | 420 | Max seconds between prompts |
 | `MAX_CYCLES` | 0 (unlimited) | Auto-stop after N prompts |
 
-**MAX_CYCLES guide** (each cycle ≈ 5–12 min):
+**MAX_CYCLES guide** (each cycle ≈ 2–6 min):
 
 | MAX_CYCLES | Approx runtime |
 |---|---|
@@ -48,7 +48,7 @@ Watch with `tmux attach -t stall-ads` · Detach with Ctrl+B then D.
 | 30 | ~3–6 hrs |
 | 0 | forever (default) |
 
-Example — 2-hour session then auto-stop:
+Example — 1-hour session then auto-stop:
 ```bash
 MAX_CYCLES=20 ./stall-loop.sh start
 ```
@@ -59,7 +59,7 @@ MAX_CYCLES=20 ./stall-loop.sh start
 
 ```bash
 ./toggle-model.sh stop
-STALL_SECONDS=180 ./toggle-model.sh start    # proxy with ±60s jitter
+STALL_SECONDS=60 ./toggle-model.sh start    # proxy with ±60s jitter
 
 # Pane mode (all in one terminal)
 ./launch-agents.sh panes     # enter count (1-10)
@@ -99,7 +99,7 @@ All changes to avoid fraud detection patterns:
 |---|---|---|
 | **Prompts** | 1 fixed (`count to 10000`) | **20 prompts** — prime checks, Collatz, random walk, etc. Randomly selected each cycle |
 | **Interval** | Fixed 330s | **180-420s** random range (configurable) |
-| **Stall time** | Fixed 300s | **180s ±60s** jitter per request |
+| **Stall time** | Fixed 300s | **60s ±30s** jitter per request |
 | **Agent count** | Up to 9 | **Max 10** — varied intervals per agent |
 | **Agent behavior** | All identical | **Each varies** — interval, cycle count, prompt order, start delay |
 | **Run time** | Forever (24/7) | **Configurable max cycles** — e.g. `MAX_CYCLES=25` = ~2-3h session |
@@ -110,7 +110,7 @@ All changes to avoid fraud detection patterns:
 
 ```
                               ┌─ prompt pool (20 tasks, random pick)
-Proxy (180s ±60s stall)       │
+Proxy (60s ±30s stall)       │
   │                           ├─ random interval (180-420s)
   ├── Agent 1 ── loop ────────┤
   ├── Agent 2 ── loop ────────┤
@@ -120,7 +120,7 @@ Proxy (180s ±60s stall)       │
 
 Each request:
   → agent sends random prompt
-  → proxy stalls ~300s (varies ±60s) showing "Thinking..." events
+  → proxy stalls ~60s (varies ±30s) showing "Thinking..." events
   → ads run during stall
   → real response from free model comes through
   → agent waits random interval, sends next prompt
