@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# launch-agents.sh - Run multiple Claude agents in tmux windows
+# launch-agents.sh - Run multiple Claude agents in tmux panes
 #
-# One tmux session "agents" with N windows (1 per agent).
-# Attach and flip through windows with Ctrl+B + number.
+# One tmux session "agents" with N panes — all visible at once.
 #
 # Usage:
 #   ./launch-agents.sh start          # Ask count + launch
@@ -22,9 +21,10 @@ mkdir -p "$PID_DIR" "$(dirname "$LOG")"
 
 send_prompt() {
   local n="$1"
-  tmux send-keys -t "$SESSION:$n" "$PROMPT"
+  local pane_idx=$(( n - 1 ))
+  tmux send-keys -t "$SESSION:0.$pane_idx" "$PROMPT"
   sleep 0.5
-  tmux send-keys -t "$SESSION:$n" Enter
+  tmux send-keys -t "$SESSION:0.$pane_idx" Enter
 }
 
 start_all() {
@@ -37,15 +37,18 @@ start_all() {
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   sleep 1
 
-  # First window creates the session
-  tmux new-session -d -s "$SESSION" -n "1" "$CLAUDE_CMD"
+  # First pane creates the session
+  tmux new-session -d -s "$SESSION" "$CLAUDE_CMD"
   echo "Agent 1: launched." | tee -a "$LOG"
 
-  # Remaining windows
+  # Split into panes for remaining agents
   for i in $(seq 2 "$count"); do
-    tmux new-window -t "$SESSION" -n "$i" "$CLAUDE_CMD"
+    tmux split-window -t "$SESSION" "$CLAUDE_CMD"
     echo "Agent $i: launched." | tee -a "$LOG"
   done
+
+  # Even tiled layout
+  tmux select-layout -t "$SESSION" tiled 2>/dev/null
 
   # Send first prompts + start loops
   for i in $(seq 1 "$count"); do
@@ -70,7 +73,7 @@ start_all() {
   echo "  $count agents in tmux session '$SESSION'"
   echo "=========================================="
   echo "  Attach:  tmux attach -t $SESSION"
-  echo "  Windows: Ctrl+B then number to switch"
+  echo "  Zoom:    Ctrl+B then Z (on a pane)"
   echo "  Status:  ./launch-agents.sh status"
   echo "  Stop:    ./launch-agents.sh stop"
   echo "=========================================="
@@ -86,7 +89,7 @@ case "${1:-start}" in
     echo ""
     [[ "$COUNT" =~ ^[0-9]+$ ]] || { echo "Enter a number."; exit 1; }
     [ "$COUNT" -gt 0 ] || { echo "Must be at least 1."; exit 1; }
-    [ "$COUNT" -gt 20 ] && { echo "Max 20."; exit 1; }
+    [ "$COUNT" -gt 9 ] && { echo "Max 9 (screen too small)."; exit 1; }
     start_all "$COUNT"
     ;;
 
@@ -108,7 +111,7 @@ case "${1:-start}" in
       local n=$(basename "$pidfile" .pid | sed 's/agent-//')
       local loop_running="no"
       kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
-      echo "Agent $n: window exists, loop=$loop_running"
+      echo "Agent $n: pane exists, loop=$loop_running"
     done
     ;;
 
