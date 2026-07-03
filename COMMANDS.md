@@ -1,71 +1,79 @@
 # Commands
 
-## Start everything
+## 1. Single Agent (manual tmux)
 
-### Terminal 1 — Watch Claude live
 ```bash
+# Terminal 1 — Start proxy
 cd /home/mylappy/Projects/opencode-proxy
+./toggle-model.sh stop
 STALL_SECONDS=300 ./toggle-model.sh start
-./stall-loop.sh launch
-```
 
-### Terminal 2 — Auto-loop (sends prompts automatically)
-```bash
-cd /home/mylappy/Projects/opencode-proxy
+# Then open Claude in tmux
+./stall-loop.sh launch
+
+# Terminal 2 — Start auto-loop
 ./stall-loop.sh start
 ```
 
-## Manual commands
+Watch with `tmux attach -t stall-ads` · Detach with Ctrl+B then D.
 
-### Send one prompt now
+---
+
+## 2. Multi-Agent
+
+### Start proxy
 ```bash
-./stall-loop.sh send
-```
-
-### Attach/detach from tmux
-```bash
-./stall-loop.sh attach    # re-attach to watch Claude
-# Ctrl+B then D to detach
-```
-
-### Check status
-```bash
-./stall-loop.sh status
-```
-
-## Stop everything
-
-### Stop auto-loop and close tmux session
-```bash
-./stall-loop.sh stop
-```
-
-### Stop the proxy
-```bash
+cd /home/mylappy/Projects/opencode-proxy
 ./toggle-model.sh stop
+STALL_SECONDS=300 ./toggle-model.sh start
 ```
 
-## Multi-agent (run multiple Claude instances)
+### Launch agents — pick a mode
 
-### Start N agents
+**Pane mode** — all visible in one terminal:
 ```bash
-./launch-agents.sh start
-# Prompts: "How many Claude agents to run?"
+./launch-agents.sh panes     # enter count (1-9)
+tmux attach -t agents        # see all in tiled grid
+```
+Zoom: Ctrl+B then Z · Unzoom: Ctrl+B then Z · Detach: Ctrl+B then D
+
+**Tab mode** — one GNOME terminal tab per agent:
+```bash
+./launch-agents.sh tabs      # enter count (1-9)
+# Opens N GNOME tabs, each showing one agent full-screen
 ```
 
-### View agent status
+**Interactive menu:**
+```bash
+./launch-agents.sh start     # asks panes (1) or tabs (2) + count
+```
+
+### Status
 ```bash
 ./launch-agents.sh status
 ```
 
-### Attach to a specific agent
+### Stop
 ```bash
-./launch-agents.sh attach 1   # agent 1
-./launch-agents.sh attach 2   # agent 2
-# Ctrl+B then D to detach
+./launch-agents.sh stop      # kill all agents + loops
+./toggle-model.sh stop       # kill proxy
 ```
 
-### Stop all agents
-```bash
-./launch-agents.sh stop
+---
+
+## How it works
+
+```
+Proxy (STALL_SECONDS=300)
+  │
+  ├── Agent 1 ── loop (sends prompt every 330s)
+  ├── Agent 2 ── loop (sends prompt every 330s)
+  ├── Agent 3 ── loop (sends prompt every 330s)
+  └── ...
+
+Each agent:
+  → sends prompt
+  → proxy sends fake thinking blocks for 300 seconds (ads run)
+  → real response comes through
+  → loop waits 30s, sends next prompt
 ```
