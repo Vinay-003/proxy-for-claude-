@@ -38,7 +38,7 @@ gen_config() {
   local n="$1"
   local min_interval max_interval max_cycles start_delay
   # Spread intervals: agent 1 fastest, agent 5 slowest
-  min_interval=$(( 120 + n * 30 + RANDOM % 60 ))
+  min_interval=$(( 120 + n * 20 + RANDOM % 60 ))
   max_interval=$(( min_interval + 120 + RANDOM % 120 ))
   max_cycles=$(( 8 + n * 2 + RANDOM % 5 ))  # agents run different lengths
   start_delay=$(( n * 8 + RANDOM % 15 ))     # staggered start
@@ -206,14 +206,14 @@ stop_all() {
 case "${1:-start}" in
   panes)
     echo ""
-    read -r -p "  How many Claude agents (1-5)? " COUNT
-    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 5 ] && mode_panes "$COUNT" || echo "Enter 1-5."
+    read -r -p "  How many Claude agents (1-10)? " COUNT
+    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 10 ] && mode_panes "$COUNT" || echo "Enter 1-10."
     ;;
 
   tabs)
     echo ""
-    read -r -p "  How many Claude agents (1-5)? " COUNT
-    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 5 ] && mode_tabs "$COUNT" || echo "Enter 1-5."
+    read -r -p "  How many Claude agents (1-10)? " COUNT
+    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 10 ] && mode_tabs "$COUNT" || echo "Enter 1-10."
     ;;
 
   start)

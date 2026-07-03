@@ -4,6 +4,7 @@ const http = require('http');
 
 const PORT = parseInt(process.env.PORT || '5454');
 const STALL_SECONDS = parseInt(process.env.STALL_SECONDS || '0');
+// Default: 180s (3 min). Claude Code may terminate requests that think too long.
 const STALL_JITTER = parseInt(process.env.STALL_JITTER || '60');
 const FREE_API = 'https://opencode.ai/zen/v1';
 const LOG = `${process.env.HOME || '/tmp'}/.claude-ad-loop.log`;

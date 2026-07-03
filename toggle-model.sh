@@ -46,7 +46,7 @@ case "${1:-status}" in
     echo "Usage: $0 {free|aerolink|start|stop|status}"
     echo ""
     echo "Stall mode (keep spinner running for ads):"
-    echo "  STALL_SECONDS=300 $0 start"
+    echo "  STALL_SECONDS=180 $0 start"
     echo "  $0 stop"
     ;;
 esac
