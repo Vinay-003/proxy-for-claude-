@@ -14,6 +14,7 @@ PIDFILE="/tmp/stall-loop-pid"
 PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
 STALL=${STALL_SECONDS:-300}
 INTERVAL=$(( STALL + 30 ))
+CLAUDE_CMD="$(which claude 2>/dev/null || echo '/home/mylappy/.nvm/versions/node/v24.14.1/bin/claude')"
 
 mkdir -p "$(dirname "$LOG")"
 
@@ -33,7 +34,7 @@ case "${1:-status}" in
     kill_old_loops
     tmux kill-session -t "$SESSION" 2>/dev/null || true
     sleep 1
-    tmux new-session -d -s "$SESSION" "claude"
+    tmux new-session -d -s "$SESSION" "$CLAUDE_CMD"
     tmux attach -t "$SESSION"
     ;;
 

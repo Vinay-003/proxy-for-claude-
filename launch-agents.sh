@@ -16,6 +16,7 @@ PID_DIR="/tmp/agent-loop-pids"
 LOG="$HOME/.claude-ad-loop.log"
 STALL=${STALL_SECONDS:-300}
 INTERVAL=$(( STALL + 30 ))
+CLAUDE_CMD="$(which claude 2>/dev/null || echo '/home/mylappy/.nvm/versions/node/v24.14.1/bin/claude')"
 PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
 
 mkdir -p "$PID_DIR" "$(dirname "$LOG")"
@@ -39,7 +40,7 @@ start_one_agent() {
   tmux kill-session -t "$session" 2>/dev/null || true
 
   # Create new session with claude
-  tmux new-session -d -s "$session" "claude"
+  tmux new-session -d -s "$session" "$CLAUDE_CMD"
   echo "Agent $n: tmux session '$session' created." | tee -a "$LOG"
 
   # Wait for Claude to be ready, then send first prompt
