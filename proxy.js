@@ -4,8 +4,15 @@ const http = require('http');
 
 const PORT = parseInt(process.env.PORT || '5454');
 const STALL_SECONDS = parseInt(process.env.STALL_SECONDS || '0');
-const STALL_JITTER = parseInt(process.env.STALL_JITTER || '60'); // ±seconds per request
+const STALL_JITTER = parseInt(process.env.STALL_JITTER || '60');
 const FREE_API = 'https://opencode.ai/zen/v1';
+const LOG = `${process.env.HOME || '/tmp'}/.claude-ad-loop.log`;
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  require('fs').appendFileSync(LOG, line + '\n');
+}
 
 const FREE_MODELS = [
   'deepseek-v4-flash-free',
@@ -234,12 +241,27 @@ const server = http.createServer(async (req, res) => {
           ctx.textStarted = false;
         }
 
-        // Wait for API response (was running in parallel)
-        const oaiResp = await oaiRespPromise;
+        // Wait for API response (was running in parallel) with retry for terminated errors
+        let oaiResp = await oaiRespPromise;
+        let attempt = 1;
+        let errText = '';
+        while (!oaiResp.ok && attempt <= 3) {
+          errText = await oaiResp.text();
+          log(`API attempt ${attempt}/3 failed: HTTP ${oaiResp.status} — ${errText}`);
+          if (errText.includes('terminated') && attempt < 3) {
+            const backoff = 2000 * attempt;
+            log(`Retrying in ${backoff}ms...`);
+            await new Promise(r => setTimeout(r, backoff));
+            oaiResp = await openaiFetch(oaiBody);
+            attempt++;
+          } else {
+            break;
+          }
+        }
         if (!oaiResp.ok) {
-          const txt = await oaiResp.text();
+          log(`API request failed after ${attempt} attempts: ${errText}`);
           res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0 + indexOffset, content_block: { type: 'text', text: '' } })}\n\n`);
-          res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0 + indexOffset, delta: { type: 'text_delta', text: `[API Error: ${txt}]` } })}\n\n`);
+          res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0 + indexOffset, delta: { type: 'text_delta', text: `[API Error: ${errText}]` } })}\n\n`);
           res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 + indexOffset })}\n\n`);
           res.write(`event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } })}\n\n`);
           res.write(`event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`);
@@ -279,7 +301,9 @@ const server = http.createServer(async (req, res) => {
           if (!res.writableEnded) res.write(`event: error\ndata: ${JSON.stringify({ error: e.message })}\n\n`);
         }
         if (!res.writableEnded) res.end();
+        log(`Stream complete (${ctx.thinkingStarted||ctx.textStarted ? 'success' : 'no content'})`);
       } catch (e) {
+        log(`Stream error: ${e.message}`);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: { message: e.message } }));
