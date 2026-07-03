@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# launch-agents.sh - Run multiple Claude agents in parallel
+# launch-agents.sh - Run multiple Claude agents in tmux windows
 #
-# Each agent runs in its own tmux session (agent-1, agent-2, etc.)
-# with its own auto-loop sending prompts every N seconds.
+# One tmux session "agents" with N windows (1 per agent).
+# Attach and flip through windows with Ctrl+B + number.
 #
 # Usage:
-#   ./launch-agents.sh              # Launch dashboard (asks for count)
-#   ./launch-agents.sh start        # Same as above
-#   ./launch-agents.sh stop         # Kill all agents + loops
-#   ./launch-agents.sh status       # Show status of all agents
-#   ./launch-agents.sh attach <N>   # Attach to agent N
+#   ./launch-agents.sh start          # Ask count + launch
+#   ./launch-agents.sh attach         # Attach to dashboard
+#   ./launch-agents.sh status         # Show all agents
+#   ./launch-agents.sh stop           # Kill everything
 
-SESSION_PREFIX="agent"
+SESSION="agents"
 PID_DIR="/tmp/agent-loop-pids"
 LOG="$HOME/.claude-ad-loop.log"
 STALL=${STALL_SECONDS:-300}
@@ -22,71 +21,59 @@ PROMPT="Count silently from 1 to 10000. For each number check if it is prime and
 mkdir -p "$PID_DIR" "$(dirname "$LOG")"
 
 send_prompt() {
-  local session="$1"
-  tmux send-keys -l -t "$session" "$PROMPT"
-  sleep 0.5
-  tmux send-keys -t "$session" Enter
-}
-
-start_one_agent() {
   local n="$1"
-  local session="${SESSION_PREFIX}-${n}"
-  local pidfile="${PID_DIR}/${session}.pid"
-
-  # Kill old loop for this agent if any
-  [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null; rm -f "$pidfile"
-
-  # Kill old session if any
-  tmux kill-session -t "$session" 2>/dev/null || true
-
-  # Create new session with claude
-  tmux new-session -d -s "$session" "$CLAUDE_CMD"
-  echo "Agent $n: tmux session '$session' created." | tee -a "$LOG"
-
-  # Wait for Claude to be ready, then send first prompt
-  sleep 5
-  send_prompt "$session"
-  echo "Agent $n: first prompt sent." | tee -a "$LOG"
-
-  # Start background loop
-  (
-    while true; do
-      sleep "$INTERVAL"
-      send_prompt "$session"
-      echo "[$(date '+%H:%M:%S')] Agent $n: prompt sent." | tee -a "$LOG"
-    done
-  ) &
-  echo $! > "$pidfile"
-  echo "Agent $n: loop started (PID $!)." | tee -a "$LOG"
+  tmux send-keys -t "$SESSION:$n" "$PROMPT"
+  sleep 0.5
+  tmux send-keys -t "$SESSION:$n" Enter
 }
 
-stop_all() {
+start_all() {
+  local count="$1"
+
+  # Kill old everything
   for pidfile in "$PID_DIR"/*.pid; do
     [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null; rm -f "$pidfile"
   done
-  for n in $(seq 1 100); do
-    local session="${SESSION_PREFIX}-${n}"
-    tmux has-session -t "$session" 2>/dev/null || break
-    tmux kill-session -t "$session" 2>/dev/null
-    echo "Agent $n: stopped." | tee -a "$LOG"
-  done
-  echo "All agents stopped." | tee -a "$LOG"
-}
+  tmux kill-session -t "$SESSION" 2>/dev/null || true
+  sleep 1
 
-status_all() {
-  local count=0
-  for pidfile in "$PID_DIR"/*.pid; do
-    [ -f "$pidfile" ] || continue
-    local session_name=$(basename "$pidfile" .pid)
-    local n="${session_name#${SESSION_PREFIX}-}"
-    local running="no"
-    tmux has-session -t "$session_name" 2>/dev/null && running="yes"
-    local loop_running="no"
-    kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
-    echo "Agent $n: session=$running loop=$loop_running (tmux: $session_name)"
-    count=$((count + 1))
+  # First window creates the session
+  tmux new-session -d -s "$SESSION" -n "1" "$CLAUDE_CMD"
+  echo "Agent 1: launched." | tee -a "$LOG"
+
+  # Remaining windows
+  for i in $(seq 2 "$count"); do
+    tmux new-window -t "$SESSION" -n "$i" "$CLAUDE_CMD"
+    echo "Agent $i: launched." | tee -a "$LOG"
   done
-  [ "$count" -eq 0 ] && echo "No agents running."
+
+  # Send first prompts + start loops
+  for i in $(seq 1 "$count"); do
+    local pidfile="${PID_DIR}/agent-${i}.pid"
+    sleep 5
+    send_prompt "$i" &
+    echo "Agent $i: first prompt sent." | tee -a "$LOG"
+
+    (
+      while true; do
+        sleep "$INTERVAL"
+        send_prompt "$i"
+        echo "[$(date '+%H:%M:%S')] Agent $i: prompt sent." | tee -a "$LOG"
+      done
+    ) &
+    echo $! > "$pidfile"
+    echo "Agent $i: loop started (PID $!)." | tee -a "$LOG"
+  done
+
+  echo ""
+  echo "=========================================="
+  echo "  $count agents in tmux session '$SESSION'"
+  echo "=========================================="
+  echo "  Attach:  tmux attach -t $SESSION"
+  echo "  Windows: Ctrl+B then number to switch"
+  echo "  Status:  ./launch-agents.sh status"
+  echo "  Stop:    ./launch-agents.sh stop"
+  echo "=========================================="
 }
 
 case "${1:-start}" in
@@ -97,50 +84,43 @@ case "${1:-start}" in
     echo "=========================================="
     read -r -p "  How many Claude agents to run? " COUNT
     echo ""
-
-    # Validate
     [[ "$COUNT" =~ ^[0-9]+$ ]] || { echo "Enter a number."; exit 1; }
     [ "$COUNT" -gt 0 ] || { echo "Must be at least 1."; exit 1; }
     [ "$COUNT" -gt 20 ] && { echo "Max 20."; exit 1; }
-
-    for i in $(seq 1 "$COUNT"); do
-      start_one_agent "$i"
-      sleep 2  # stagger launches
-    done
-
-    echo ""
-    echo "=========================================="
-    echo "  $COUNT agents running!"
-    echo "=========================================="
-    echo "  Attach:  ./launch-agents.sh attach <N>"
-    echo "  Status:  ./launch-agents.sh status"
-    echo "  Stop:    ./launch-agents.sh stop"
-    echo "=========================================="
-    echo ""
-
-    # Show quick status
-    status_all
-    ;;
-
-  stop)
-    stop_all
-    ;;
-
-  status)
-    status_all
+    start_all "$COUNT"
     ;;
 
   attach)
-    local n="${2:-1}"
-    local session="${SESSION_PREFIX}-${n}"
-    if tmux has-session -t "$session" 2>/dev/null; then
-      tmux attach -t "$session"
+    if tmux has-session -t "$SESSION" 2>/dev/null; then
+      tmux attach -t "$SESSION"
     else
-      echo "Agent $n not running."
+      echo "No agents running. Run '$0 start' first."
     fi
     ;;
 
+  status)
+    if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+      echo "No agents running."
+      exit 0
+    fi
+    for pidfile in "$PID_DIR"/*.pid; do
+      [ -f "$pidfile" ] || continue
+      local n=$(basename "$pidfile" .pid | sed 's/agent-//')
+      local loop_running="no"
+      kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
+      echo "Agent $n: window exists, loop=$loop_running"
+    done
+    ;;
+
+  stop)
+    for pidfile in "$PID_DIR"/*.pid; do
+      [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null; rm -f "$pidfile"
+    done
+    tmux kill-session -t "$SESSION" 2>/dev/null
+    echo "All agents stopped."
+    ;;
+
   *)
-    echo "Usage: $0 [start|stop|status|attach <N>]"
+    echo "Usage: $0 {start|attach|status|stop}"
     ;;
 esac
