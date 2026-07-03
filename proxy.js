@@ -99,6 +99,18 @@ function* openaiToAnthropicSSE(line, model, ctx, indexOffset = 0) {
   }
   let chunk;
   try { chunk = JSON.parse(d); } catch { return; }
+  if (chunk.error) {
+    log(`API stream error: ${JSON.stringify(chunk.error)}`);
+    if (!ctx.textStarted) {
+      ctx.textStarted = true;
+      yield `event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })}\n\n`;
+    }
+    yield `event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `[API Error: ${JSON.stringify(chunk.error)}]` } })}\n\n`;
+    yield `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`;
+    yield `event: message_delta\ndata: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } })}\n\n`;
+    yield `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`;
+    return;
+  }
   const choice = chunk.choices?.[0];
   const delta = choice?.delta;
   const finish = choice?.finish_reason;
