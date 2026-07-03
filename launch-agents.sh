@@ -181,17 +181,17 @@ case "${1:-start}" in
     ;;
 
   status)
-    local found=0
+    found=0
     if tmux has-session -t "$SESSION" 2>/dev/null; then
       echo "Pane dashboard: RUNNING"
       found=1
     fi
     for pidfile in "$PID_DIR"/*.pid; do
       [ -f "$pidfile" ] || continue
-      local n=$(basename "$pidfile" .pid | sed 's/agent-//')
-      local loop_running="no"
+      n=$(basename "$pidfile" .pid | sed 's/agent-//')
+      loop_running="no"
       kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
-      local ses_running="no"
+      ses_running="no"
       tmux has-session -t "${SESSION}" 2>/dev/null && ses_running="yes"
       tmux has-session -t "agent-${n}" 2>/dev/null && ses_running="yes"
       echo "Agent $n: session=$ses_running loop=$loop_running"
