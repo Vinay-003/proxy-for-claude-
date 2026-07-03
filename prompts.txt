@@ -1,0 +1,24 @@
+# Prompt pool for ad-loop agents
+# Each line is one prompt. Scripts pick randomly.
+# Designed to trigger extended thinking (minutes) with minimal output.
+
+Generate a 2000x2000 multiplication table in your head and find all diagonal patterns. Output only 'OK [D]' when done.
+I need to check if 9999991, 9999997, 9999999, 10000019, 10000079, 10000103, 10000121, 10000139 are prime. For each prime, compute its square root to 10 decimal places. Output only 'OK [P]' when done.
+List all prime numbers between 100000 and 200000. For each prime, calculate the sum of its digits. Find the 500th prime in this range and output only the number.
+Find the sum of all odd numbers from 1 to 50000. Then multiply by pi. Output only the final number with 4 decimal places.
+Sum every 7th number from 1 to 100000 and multiply the result by pi. Output only the final number with 4 decimal places.
+Starting with 1, apply this rule 10000 times: if even divide by 2, if odd multiply by 3 and add 1. Output only the value after 10000 iterations.
+Compute the 500th Fibonacci number using exact integer arithmetic. Count how many digits it has. Output only the digit count.
+Find all perfect numbers between 1 and 10000000 by checking every integer. Output only 'OK [PERF]' when done.
+Simulate 10000 steps of a random walk starting at 0, adding either +1 or -1 each step. Track the maximum absolute deviation from 0. Output only that number.
+Find all numbers from 1 to 50000 whose Collatz sequence takes more than 200 steps to reach 1. Output only 'OK [C]' when done.
+Write a Python script that sorts 1 million random numbers using quicksort, merge sort, heap sort, and timsort. Benchmark each and output only the fastest algorithm name.
+Solve this 3x3 system: 17x+19y+23z=1000, 13x+29y+11z=1000, 31x+7y+37z=1000. Use only mental math. Output only the sum x+y+z with 6 decimal places.
+Calculate 2^100000 mod 9999991 using modular exponentiation. Output only the result.
+Write a regex that matches all prime numbers from 1 to 10000 in unary representation. Output only the regex length in characters.
+Compute the first 10000 digits of e using a continued fraction expansion. Output only 'OK [E]' when done.
+Starting from 0, add 1 each iteration. Stop when the cumulative sum exceeds 100 million. Output only the number of iterations needed.
+Find the greatest common divisor of 123456789 and 987654321 using Euclid's algorithm step by step. Output only the final GCD.
+Calculate the sum of all digits of 1000! (1000 factorial). Output only the digit sum.
+Reverse-engineer this: I'm thinking of a 6-digit number where the first digit is the number of zeros, the second digit is the number of ones, etc. Output only the number.
+Count silently from 1 to 15000. For each number compute its prime factors. Only output 'OK [N]' when done.

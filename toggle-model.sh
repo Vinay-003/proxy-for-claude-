@@ -21,7 +21,7 @@ case "${1:-status}" in
     nohup env STALL_SECONDS="$STALL" node proxy.js > /tmp/opencode-proxy.log 2>&1 &
     echo "→ Proxy started (PID: $!)"
     if [ "$STALL" -gt 0 ]; then
-      echo "  Stall mode: ${STALL}s fake thinking before each response"
+      echo "  Stall mode: ${STALL}s ±${STALL_JITTER:-60}s jitter per request"
     fi
     sleep 1
     curl -s http://127.0.0.1:5454/v1/models | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'  {len(d[\"data\"])} models available')"

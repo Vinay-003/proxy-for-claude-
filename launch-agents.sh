@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# launch-agents.sh - Run multiple Claude agents
+# launch-agents.sh - Run multiple Claude agents with human-like variation
 #
-# Modes:
-#   panes — one tmux session, tiled panes, all visible in one terminal
-#   tabs  — one tmux session per agent, each in its own GNOME terminal tab
+# Each agent gets:
+#   - Different prompt pool (slightly shuffled)
+#   - Different interval range (natural variation)
+#   - Different max cycles (agents stop at different times)
+#   - Staggered start delays
 #
 # Usage:
 #   ./launch-agents.sh start           # Ask count + mode
@@ -16,38 +18,81 @@
 SESSION="agents"
 PID_DIR="/tmp/agent-loop-pids"
 LOG="$HOME/.claude-ad-loop.log"
-STALL=${STALL_SECONDS:-300}
-INTERVAL=$(( STALL + 30 ))
 CLAUDE_CMD="$(which claude 2>/dev/null || echo '/home/mylappy/.nvm/versions/node/v24.14.1/bin/claude')"
-PROMPT="Count silently from 1 to 10000. For each number check if it is prime and compute its square root. Only output 'OK [N]' when done."
+PROMPT_FILE="/home/mylappy/Projects/opencode-proxy/prompts.txt"
 
 mkdir -p "$PID_DIR" "$(dirname "$LOG")"
 
 send_prompt() {
   local target="$1"
-  tmux send-keys -l -t "$target" "$PROMPT"
+  local file="$2"
+  local prompt
+  prompt="$(grep -v '^#' "$file" | grep -v '^[[:space:]]*$' | shuf -n1)"
+  tmux send-keys -l -t "$target" "$prompt"
   sleep 0.5
   tmux send-keys -t "$target" Enter
+}
+
+# Generate per-agent config with variation
+gen_config() {
+  local n="$1"
+  local min_interval max_interval max_cycles start_delay
+  # Spread intervals: agent 1 fastest, agent 5 slowest
+  min_interval=$(( 120 + n * 30 + RANDOM % 60 ))
+  max_interval=$(( min_interval + 120 + RANDOM % 120 ))
+  max_cycles=$(( 8 + n * 2 + RANDOM % 5 ))  # agents run different lengths
+  start_delay=$(( n * 8 + RANDOM % 15 ))     # staggered start
+  echo "$min_interval $max_interval $max_cycles $start_delay"
 }
 
 start_loop() {
   local n="$1"
   local target="$2"
+  local prompt_file="${PID_DIR}/prompts-agent-${n}.txt"
   local pidfile="${PID_DIR}/agent-${n}.pid"
+  local counter="${PID_DIR}/count-${n}"
+  local conf_file="${PID_DIR}/conf-${n}"
+  local min_interval max_interval max_cycles start_delay
 
-  sleep 5
-  send_prompt "$target" &
-  echo "Agent $n: first prompt sent." | tee -a "$LOG"
+  read -r min_interval max_interval max_cycles start_delay < "$conf_file"
+
+  sleep "$start_delay"
+
+  local prompt
+  prompt="$(grep -v '^#' "$prompt_file" | grep -v '^[[:space:]]*$' | shuf -n1)"
+  tmux send-keys -l -t "$target" "$prompt"
+  sleep 0.5
+  tmux send-keys -t "$target" Enter
+  echo "1" > "$counter"
+  echo "Agent $n: first prompt sent. (delay=${start_delay}s)" | tee -a "$LOG"
 
   (
     while true; do
-      sleep "$INTERVAL"
-      send_prompt "$target"
-      echo "[$(date '+%H:%M:%S')] Agent $n: prompt sent." | tee -a "$LOG"
+      local interval
+      interval=$(( min_interval + RANDOM % (max_interval - min_interval + 1) ))
+      sleep "$interval"
+
+      local cycle
+      cycle=$(cat "$counter" 2>/dev/null || echo 0)
+      cycle=$(( cycle + 1 ))
+
+      if [ "$cycle" -gt "$max_cycles" ]; then
+        echo "Agent $n: reached $max_cycles cycles. Stopping." | tee -a "$LOG"
+        break
+      fi
+
+      local prompt
+      prompt="$(grep -v '^#' "$prompt_file" | grep -v '^[[:space:]]*$' | shuf -n1)"
+      tmux send-keys -l -t "$target" "$prompt"
+      sleep 0.5
+      tmux send-keys -t "$target" Enter
+      echo "$cycle" > "$counter"
+      echo "[$(date '+%H:%M:%S')] Agent $n: cycle $cycle/$max_cycles (interval=${interval}s)" | tee -a "$LOG"
     done
+    rm -f "$counter" "$pidfile"
   ) &
   echo $! > "$pidfile"
-  echo "Agent $n: loop started (PID $!)." | tee -a "$LOG"
+  echo "Agent $n: loop started (PID $!, config=${min_interval}-${max_interval}s × ${max_cycles}cyc)." | tee -a "$LOG"
 }
 
 mode_panes() {
@@ -58,6 +103,12 @@ mode_panes() {
   done
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   sleep 1
+
+  # Create per-agent prompt files (shuffled uniquely per agent)
+  for i in $(seq 1 "$count"); do
+    grep -v '^#' "$PROMPT_FILE" | grep -v '^[[:space:]]*$' | shuf > "${PID_DIR}/prompts-agent-${i}.txt"
+    gen_config "$i" > "${PID_DIR}/conf-${i}"
+  done
 
   tmux new-session -d -s "$SESSION" "$CLAUDE_CMD"
   echo "Agent 1: launched." | tee -a "$LOG"
@@ -72,13 +123,14 @@ mode_panes() {
   for i in $(seq 1 "$count"); do
     local pane_idx=$(( i - 1 ))
     start_loop "$i" "$SESSION:0.$pane_idx" &
-    sleep 1
+    sleep 2
   done
   wait
 
   echo ""
   echo "=========================================="
   echo "  $count agents — PANE MODE"
+  echo "  Each agent: varied interval, prompt, cycles"
   echo "=========================================="
   echo "  Attach:  tmux attach -t $SESSION"
   echo "  Zoom:    Ctrl+B then Z"
@@ -99,6 +151,12 @@ mode_tabs() {
   done
   sleep 1
 
+  # Create per-agent prompt files (shuffled uniquely per agent)
+  for i in $(seq 1 "$count"); do
+    grep -v '^#' "$PROMPT_FILE" | grep -v '^[[:space:]]*$' | shuf > "${PID_DIR}/prompts-agent-${i}.txt"
+    gen_config "$i" > "${PID_DIR}/conf-${i}"
+  done
+
   for i in $(seq 1 "$count"); do
     local ses="agent-${i}"
     tmux new-session -d -s "$ses" "$CLAUDE_CMD"
@@ -108,7 +166,7 @@ mode_tabs() {
   for i in $(seq 1 "$count"); do
     local ses="agent-${i}"
     start_loop "$i" "$ses" &
-    sleep 1
+    sleep 2
   done
   wait
 
@@ -121,6 +179,7 @@ mode_tabs() {
   echo ""
   echo "=========================================="
   echo "  $count agents — TAB MODE"
+  echo "  Each agent: varied interval, prompt, cycles"
   echo "=========================================="
   echo "  Each agent in its own GNOME terminal tab"
   echo "  Status:  ./launch-agents.sh status"
@@ -137,20 +196,21 @@ stop_all() {
     tmux has-session -t "agent-${i}" 2>/dev/null || break
     tmux kill-session -t "agent-${i}" 2>/dev/null
   done
+  rm -rf "$PID_DIR"
   echo "All agents stopped."
 }
 
 case "${1:-start}" in
   panes)
     echo ""
-    read -r -p "  How many Claude agents? " COUNT
-    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 9 ] && mode_panes "$COUNT" || echo "Enter 1-9."
+    read -r -p "  How many Claude agents (1-5)? " COUNT
+    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 5 ] && mode_panes "$COUNT" || echo "Enter 1-5."
     ;;
 
   tabs)
     echo ""
-    read -r -p "  How many Claude agents? " COUNT
-    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 9 ] && mode_tabs "$COUNT" || echo "Enter 1-9."
+    read -r -p "  How many Claude agents (1-5)? " COUNT
+    [[ "$COUNT" =~ ^[0-9]+$ ]] && [ "$COUNT" -gt 0 ] && [ "$COUNT" -le 5 ] && mode_tabs "$COUNT" || echo "Enter 1-5."
     ;;
 
   start)
@@ -162,6 +222,7 @@ case "${1:-start}" in
     echo "    1) Panes — all visible in one terminal"
     echo "    2) Tabs  — one GNOME tab per agent"
     echo "=========================================="
+    echo ""
     read -r -p "  Choice (1 or 2)? " MODE
     echo ""
 
@@ -186,15 +247,27 @@ case "${1:-start}" in
       echo "Pane dashboard: RUNNING"
       found=1
     fi
-    for pidfile in "$PID_DIR"/*.pid; do
-      [ -f "$pidfile" ] || continue
-      n=$(basename "$pidfile" .pid | sed 's/agent-//')
+    for conf in "$PID_DIR"/conf-*; do
+      [ -f "$conf" ] || continue
+      n=$(basename "$conf" | sed 's/conf-//')
+      pidfile="${PID_DIR}/agent-${n}.pid"
+      counter="${PID_DIR}/count-${n}"
       loop_running="no"
-      kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
+      [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null && loop_running="yes"
       ses_running="no"
-      tmux has-session -t "${SESSION}" 2>/dev/null && ses_running="yes"
+      tmux has-session -t "$SESSION" 2>/dev/null && ses_running="yes"
       tmux has-session -t "agent-${n}" 2>/dev/null && ses_running="yes"
-      echo "Agent $n: session=$ses_running loop=$loop_running"
+
+      local cycles="?"
+      [ -f "$counter" ] && cycles=$(cat "$counter")
+
+      local desc=""
+      if [ -f "$conf" ]; then
+        read -r mi ma mc sd < "$conf"
+        desc="interval=${mi}-${ma}s cycles=${cycles}/${mc}"
+      fi
+
+      echo "Agent $n: session=$ses_running loop=$loop_running $desc"
       found=1
     done
     [ "$found" -eq 0 ] && echo "No agents running."

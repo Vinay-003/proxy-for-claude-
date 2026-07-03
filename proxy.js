@@ -4,6 +4,7 @@ const http = require('http');
 
 const PORT = parseInt(process.env.PORT || '5454');
 const STALL_SECONDS = parseInt(process.env.STALL_SECONDS || '0');
+const STALL_JITTER = parseInt(process.env.STALL_JITTER || '60'); // ±seconds per request
 const FREE_API = 'https://opencode.ai/zen/v1';
 
 const FREE_MODELS = [
@@ -203,21 +204,29 @@ const server = http.createServer(async (req, res) => {
 
         // Stall phase: send fake thinking blocks before the real response
         if (STALL_SECONDS > 0) {
+          // Add jitter: vary actual stall time per request
+          const jitter = Math.floor(Math.random() * STALL_JITTER * 2) - STALL_JITTER;
+          const actualStall = Math.max(10, STALL_SECONDS + jitter);
           indexOffset = 1;
           ctx.thinkingStarted = true;
           res.write(`event: content_block_start\ndata: ${JSON.stringify({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } })}\n\n`);
-          const stallEnd = Date.now() + STALL_SECONDS * 1000;
+          const stallEnd = Date.now() + actualStall * 1000;
           const stallWords = [
             'Processing', 'Analyzing', 'Computing', 'Reasoning', 'Thinking',
             'Evaluating', 'Synthesizing', 'Calculating', 'Examining', 'Formulating',
+            'Checking', 'Verifying', 'Running computations', 'Working through this',
+            'Breaking down the problem', 'Let me think about this carefully',
+            'Computing step by step', 'Going through the sequence',
           ];
           let wi = 0;
           while (Date.now() < stallEnd) {
             if (res.writableEnded) break;
             const remaining = Math.ceil((stallEnd - Date.now()) / 1000);
             const word = stallWords[wi % stallWords.length];
+            // Vary update interval between 1.5-4s instead of fixed 2s
+            const tick = 1500 + Math.floor(Math.random() * 2500);
             res.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: `${word}... (${Math.floor(remaining / 60)}m ${remaining % 60}s remaining)\n` } })}\n\n`);
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, tick));
             wi++;
           }
           res.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`);
