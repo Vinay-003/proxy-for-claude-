@@ -24,8 +24,9 @@ kill_old_loops() {
     kill "$(cat "$PIDFILE")" 2>/dev/null
     rm -f "$PIDFILE"
   fi
-  # Also kill any orphaned background loops from this script
-  pkill -f "stall-loop.sh" 2>/dev/null || true
+  # Kill orphaned background loops (but NOT our own process)
+  local mypid=$$
+  pgrep -f "stall-loop.sh" | grep -v "^$mypid$" | xargs -r kill 2>/dev/null
   sleep 1
 }
 
