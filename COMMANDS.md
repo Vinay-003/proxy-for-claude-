@@ -44,3 +44,28 @@ cd /home/mylappy/Projects/opencode-proxy
 ```bash
 ./toggle-model.sh stop
 ```
+
+## Multi-agent (run multiple Claude instances)
+
+### Start N agents
+```bash
+./launch-agents.sh start
+# Prompts: "How many Claude agents to run?"
+```
+
+### View agent status
+```bash
+./launch-agents.sh status
+```
+
+### Attach to a specific agent
+```bash
+./launch-agents.sh attach 1   # agent 1
+./launch-agents.sh attach 2   # agent 2
+# Ctrl+B then D to detach
+```
+
+### Stop all agents
+```bash
+./launch-agents.sh stop
+```
