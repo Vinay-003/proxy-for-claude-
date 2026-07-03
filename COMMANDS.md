@@ -23,8 +23,8 @@ STALL_SECONDS=300 ./toggle-model.sh start
 # Then open Claude in tmux
 ./stall-loop.sh launch
 
-# Terminal 2 — Start auto-loop (stops after 25 cycles by default)
-MAX_CYCLES=25 ./stall-loop.sh start
+# Terminal 2 — Start auto-loop
+./stall-loop.sh start
 ```
 
 Watch with `tmux attach -t stall-ads` · Detach with Ctrl+B then D.
@@ -38,9 +38,19 @@ Watch with `tmux attach -t stall-ads` · Detach with Ctrl+B then D.
 | `MAX_INTERVAL` | 420 | Max seconds between prompts |
 | `MAX_CYCLES` | 0 (unlimited) | Auto-stop after N prompts |
 
-Example — work session (~3h then stops):
+**MAX_CYCLES guide** (each cycle ≈ 8–13 min):
+
+| MAX_CYCLES | Approx runtime |
+|---|---|
+| 5 | ~45 min – 1 hr |
+| 10 | ~1.5 – 2 hrs |
+| 20 | ~3 – 4 hrs |
+| 30 | ~4.5 – 6 hrs |
+| 0 | forever (default) |
+
+Example — 3-hour session then auto-stop:
 ```bash
-MIN_INTERVAL=200 MAX_INTERVAL=500 MAX_CYCLES=25 ./stall-loop.sh start
+MAX_CYCLES=20 ./stall-loop.sh start
 ```
 
 ---
@@ -65,9 +75,11 @@ tmux attach -t agents        # see all in tiled grid
 **Multi-agent features:**
 - Each agent gets a unique shuffled prompt list from the 20-prompt pool
 - Different interval ranges (agent 1: ~150-270s, agent 5: ~270-510s)
-- Different max cycles (agent 1: ~10, agent 5: ~18 — stops at different times)
+- Different max cycles per agent (agent 1: ~10, agent 5: ~18 — stops at different times)
 - Staggered start delays (8-60s apart, not simultaneous)
 - Jitter: proxy adds ±60s to STALL_SECONDS per request
+
+**Multi-agent** doesn't use `MAX_CYCLES` env var — each agent calculates its own (8–22 cycles depending on agent number). Total runtime across all agents is roughly 2–4 hours before the first ones start stopping.
 
 ### Status / Stop
 

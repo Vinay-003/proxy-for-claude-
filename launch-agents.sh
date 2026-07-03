@@ -132,11 +132,14 @@ mode_panes() {
   echo "  $count agents — PANE MODE"
   echo "  Each agent: varied interval, prompt, cycles"
   echo "=========================================="
-  echo "  Attach:  tmux attach -t $SESSION"
+  echo "  Attaching in 3s..."
+  echo "  Detach:  Ctrl+B then D"
   echo "  Zoom:    Ctrl+B then Z"
   echo "  Status:  ./launch-agents.sh status"
   echo "  Stop:    ./launch-agents.sh stop"
   echo "=========================================="
+  sleep 3
+  tmux attach -t "$SESSION"
 }
 
 mode_tabs() {
@@ -258,10 +261,10 @@ case "${1:-start}" in
       tmux has-session -t "$SESSION" 2>/dev/null && ses_running="yes"
       tmux has-session -t "agent-${n}" 2>/dev/null && ses_running="yes"
 
-      local cycles="?"
+      cycles="?"
       [ -f "$counter" ] && cycles=$(cat "$counter")
 
-      local desc=""
+      desc=""
       if [ -f "$conf" ]; then
         read -r mi ma mc sd < "$conf"
         desc="interval=${mi}-${ma}s cycles=${cycles}/${mc}"
